@@ -51,7 +51,7 @@ export default function App() {
   const [playingId, setPlayingId] = useState(null);
   const [activeSong, setActiveSong] = useState(SONGS[0]);
   const [targetSpeed, setTargetSpeed] = useState(0.015);
-  const [hintVisible, setHintVisible] = useState(true);
+
   
   // ── Scratch Engine ─────────────────────────────────────────────────────────
   const engineRef            = useRef(null);
@@ -213,25 +213,6 @@ export default function App() {
         <section className="hero">
           <div className="wrap">
             <motion.div 
-              className="hero-copy"
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-            >
-              <span className="eyebrow">Custom Songs, Composed By Real Musicians</span>
-              <h1>Your story,<br/>composed with love.</h1>
-              <p>We turn your memories into a one-of-a-kind song — written, performed and produced by real musicians. Not a single note of AI.</p>
-              <div className="hero-cta-row">
-                <a href="#contact" className="btn btn-primary">
-                  Start Your Song <ArrowRight size={18} />
-                </a>
-                <a href="#testimonials" className="btn btn-outline">
-                  <Play size={18} /> Hear a Sample
-                </a>
-              </div>
-            </motion.div>
-            
-            <motion.div 
               className="hero-visual"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -247,7 +228,6 @@ export default function App() {
               <div
                 className="canvas-container"
                 style={{ touchAction: 'none' }}
-                onPointerDown={() => setHintVisible(false)}
               >
                 <Canvas
                   camera={{ position: [0, 0, 7], fov: 45 }}
@@ -264,17 +244,12 @@ export default function App() {
                     castShadow
                     shadow-mapSize={[2048, 2048]}
                   />
-                  {/* Warm fill from below */}
                   <pointLight position={[-6, -8, 4]}  intensity={2.0} color="#F7D9E3" />
-                  {/* Gold key side */}
                   <pointLight position={[8, 2, 5]}   intensity={2.5} color="#D4A373" />
-                  {/* Rose rim */}
                   <pointLight position={[-4, 4, -3]}  intensity={1.8} color="#C2185B" />
-                  {/* Top-down cool */}
                   <directionalLight position={[0, 10, 2]} intensity={1.2} color="#ddeeff" />
 
                   <Suspense fallback={null}>
-                    {/* Studio IBL for physically correct reflections */}
                     <Environment preset="studio" />
                     <VinylRecord
                       activeSong={activeSong}
@@ -295,40 +270,6 @@ export default function App() {
                 </Canvas>
               </div>
 
-              {/* ── Vinyl Interaction Hint ── */}
-              <motion.div
-                className="vinyl-hint-badge"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: hintVisible ? 1 : 0, y: hintVisible ? 0 : 8 }}
-                transition={{ delay: 1.6, duration: 0.6, ease: 'easeOut' }}
-                style={{ pointerEvents: 'none' }}
-              >
-                {/* Curved arrow SVG */}
-                <svg className="vinyl-hint-arrow" width="48" height="48" viewBox="0 0 48 48" fill="none">
-                  <path
-                    d="M42 8 C38 8, 10 6, 6 34"
-                    stroke="var(--rose)"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    fill="none"
-                    strokeDasharray="60"
-                    strokeDashoffset="0"
-                  />
-                  {/* Arrowhead */}
-                  <path
-                    d="M3 28 L6 34 L12 31"
-                    stroke="var(--rose)"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                  />
-                </svg>
-                <div className="vinyl-hint-text">
-                  <span className="vinyl-hint-icon">↺</span>
-                  <span>Drag to spin the record</span>
-                </div>
-              </motion.div>
 
               {/* Premium Song Carousel */}
               <div className="premium-carousel-wrapper">
@@ -371,8 +312,28 @@ export default function App() {
                 </div>
               </div>
             </motion.div>
+
+            <motion.div 
+              className="hero-copy"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+            >
+              <span className="eyebrow">Custom Songs, Composed By Real Musicians</span>
+              <h1>Your story,<br/>composed with love.</h1>
+              <p>We turn your memories into a one-of-a-kind song — written, performed and produced by real musicians. Not a single note of AI.</p>
+              <div className="hero-cta-row">
+                <a href="#contact" className="btn btn-primary">
+                  Start Your Song <ArrowRight size={18} />
+                </a>
+                <a href="#testimonials" className="btn btn-outline">
+                  <Play size={18} /> Hear a Sample
+                </a>
+              </div>
+            </motion.div>
           </div>
         </section>
+
 
         {/* TRUST STRIP */}
         <div className="trust-strip glass">

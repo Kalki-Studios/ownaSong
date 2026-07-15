@@ -39,6 +39,11 @@ body {
   position: relative;
 }
 
+main {
+  overflow-x: hidden;
+  width: 100%;
+}
+
 img { max-width: 100%; display: block; }
 a { color: inherit; text-decoration: none; }
 ul { margin: 0; padding: 0; list-style: none; }
@@ -218,6 +223,10 @@ h1, h2, h3 {
   gap: 60px;
 }
 
+/* Visual is first in DOM but renders on the right on desktop */
+.hero-visual { grid-column: 2; grid-row: 1; }
+.hero-copy   { grid-column: 1; grid-row: 1; }
+
 .hero-copy h1 {
   font-size: clamp(3rem, 5vw, 4.8rem);
   font-weight: 600;
@@ -334,8 +343,8 @@ h1, h2, h3 {
 .blob-1 {
   top: -10%;
   right: -5%;
-  width: 600px;
-  height: 600px;
+  width: min(600px, 80vw);
+  height: min(600px, 80vw);
   background: var(--blush);
   animation: float 20s ease-in-out infinite;
 }
@@ -343,8 +352,8 @@ h1, h2, h3 {
 .blob-2 {
   bottom: -10%;
   left: -5%;
-  width: 500px;
-  height: 500px;
+  width: min(500px, 70vw);
+  height: min(500px, 70vw);
   background: var(--mauve);
   animation: float 15s ease-in-out infinite reverse;
 }
@@ -559,22 +568,44 @@ footer { background: var(--plum-deep); color: rgba(255,249,246,0.7); padding: 70
   100% { box-shadow: 0 0 0 0 rgba(37,211,102,0); }
 }
 
+/* ───────── GLOBAL OVERFLOW FIX ───────── */
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
 /* ───────── MOBILE HERO OVERHAUL ───────── */
 @media (max-width: 968px) {
+  .hero {
+    padding-top: 80px;
+    min-height: unset;
+    padding-bottom: 60px;
+  }
+
   .hero .wrap {
     display: flex;
     flex-direction: column;
     gap: 0;
     padding: 0;
     text-align: center;
+    min-width: 0;  /* prevent children from expanding wrap past viewport */
+    width: 100%;
   }
 
-  /* hero-copy flows below the visual on tablet */
+  /* Reset grid placement — flex order handles stacking */
+  .hero-visual { grid-column: unset; grid-row: unset; }
+  .hero-copy   { grid-column: unset; grid-row: unset; }
+
+  /* vinyl on top, copy below */
+  .hero-visual {
+    order: -1;
+  }
+
   .hero-copy {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 40px 24px 60px;
+    padding: 40px 24px 20px;
   }
   .hero-copy p  { text-align: center; }
   .hero-cta-row { justify-content: center; }
@@ -590,45 +621,56 @@ footer { background: var(--plum-deep); color: rgba(255,249,246,0.7); padding: 70
     order: -1;
     width: 100%;
     max-width: 100%;
-    /* AUTO height — sizes to content so carousel never overlaps */
+    min-width: 0;              /* prevent carousel from expanding parent */
+    aspect-ratio: unset !important;  /* remove desktop 1/1 ratio */
     height: auto !important;
     min-height: unset !important;
     margin: 0;
-    padding: 80px 0 32px; /* 80px clears fixed nav, 32px breathing room below */
+    padding: 80px 0 16px;
     box-sizing: border-box;
     display: flex;
-    flex-direction: column; /* canvas on top, carousel directly below */
+    flex-direction: column;
     align-items: center;
+    justify-content: flex-start;
     position: relative;
+    overflow: hidden;  /* clip the vinyl-bloom so it can't shift layout */
+    touch-action: pan-y;
   }
 
-  /* Canvas: exactly min(78vw, 320px) square, centred */
+  /* Canvas: square, centred */
   .canvas-container {
-    width: min(78vw, 320px) !important;
-    height: min(78vw, 320px) !important;
+    width: min(82vw, 320px) !important;
+    height: min(82vw, 320px) !important;
     flex-shrink: 0;
-    position: relative !important;  /* not absolute */
+    position: relative !important;  /* normal flow, not absolute */
+    left: auto !important;
+    top: auto !important;
+    inset: unset !important;
     margin: 0 auto;
+    touch-action: none;
   }
 
-  /* Carousel: normal block flow, guaranteed gap below the disc */
+  /* Carousel: normal block flow below the disc */
   .premium-carousel-wrapper {
     position: relative !important;
     bottom: auto !important;
     left: auto !important;
     right: auto !important;
-    margin-top: 24px !important;
+    margin-top: 20px !important;
     width: 100%;
+    max-width: 100%;
+    min-width: 0;              /* don't expand parent flex container */
     display: flex;
     justify-content: center;
     z-index: 10;
     pointer-events: none;
+    overflow: hidden;
   }
 
-  /* Hint badge: relative to hero-visual, not to the absolute container */
+  /* Hint badge positioning */
   .vinyl-hint-badge {
     position: absolute;
-    top: 88px;   /* just below nav clearance */
+    top: 88px;
     left: 12px;
   }
 
@@ -644,18 +686,50 @@ footer { background: var(--plum-deep); color: rgba(255,249,246,0.7); padding: 70
     pointer-events: auto;
     transform: scale(1);
   }
+
+  /* Prevent blobs from causing overflow */
+  .bg-blob {
+    max-width: 100vw;
+    overflow: hidden;
+  }
+  .blob-1, .blob-2 {
+    width: min(400px, 100vw);
+    height: min(400px, 100vw);
+  }
+
+  /* Sections */
+  section { padding: 64px 0; }
+  .wrap { padding: 0 20px; }
+
+  .track-row { grid-template-columns: 44px 1fr; }
+  .track-time { grid-column: 2; text-align: left; margin-top: 8px; }
 }
 
 @media (max-width: 480px) {
-  /* Slightly larger disc on very small phones to fill space nicely */
   .canvas-container {
-    width: min(86vw, 300px) !important;
-    height: min(86vw, 300px) !important;
+    width: min(88vw, 480px) !important;
+    height: min(88vw, 480px) !important;
   }
-  /* Shrink headline so it doesn't eat vertical space */
   .hero-copy h1 {
     font-size: clamp(2rem, 8vw, 2.8rem);
     line-height: 1.15;
+  }
+  .premium-carousel {
+    gap: 12px;
+    padding: 10px 16px;
+  }
+  .chip-art {
+    width: 42px;
+    height: 42px;
+  }
+  .btn {
+    padding: 14px 28px;
+    font-size: 0.95rem;
+  }
+  .hero-cta-row {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
   }
 }
 
@@ -676,7 +750,10 @@ footer { background: var(--plum-deep); color: rgba(255,249,246,0.7); padding: 70
   display: flex;
   justify-content: center;
   z-index: 10;
-  pointer-events: none; /* Let clicks pass through empty space */
+  pointer-events: none;
+  overflow: hidden; /* never spill horizontally */
+  padding: 0 16px;
+  box-sizing: border-box;
 }
 
 .premium-carousel {
@@ -690,7 +767,7 @@ footer { background: var(--plum-deep); color: rgba(255,249,246,0.7); padding: 70
   border-radius: 24px;
   box-shadow: 0 16px 40px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.6);
   pointer-events: auto;
-  max-width: 90vw;
+  max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
