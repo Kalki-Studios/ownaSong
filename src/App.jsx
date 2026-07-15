@@ -214,9 +214,9 @@ export default function App() {
           <div className="wrap">
             <motion.div 
               className="hero-visual"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
             >
               <motion.div 
                 className="vinyl-bloom"
