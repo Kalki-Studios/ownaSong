@@ -1,19 +1,22 @@
 import React, { Suspense, useEffect, useState, useRef, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Environment, ContactShadows } from '@react-three/drei';
-import { Play, Pause, Disc, ArrowRight, Check } from 'lucide-react';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { Play, Pause, ArrowRight, Check, Disc3 } from 'lucide-react';
+import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import VinylRecord from './VinylRecord';
 import { createScratchEngine } from './lib/scratchEngine';
+import OrderForm from './OrderForm';
+import TeamDirectory from './TeamDirectory';
 
 // Reusable reveal animation component
-const Reveal = ({ children, delay = 0, className = "" }) => (
+const Reveal = ({ children, delay = 0, className = "", style }) => (
   <motion.div
     initial={{ opacity: 0, y: 30 }}
     whileInView={{ opacity: 1, y: 0 }}
     viewport={{ once: true, margin: "-100px" }}
     transition={{ duration: 0.8, delay, ease: "easeOut" }}
     className={className}
+    style={style}
   >
     {children}
   </motion.div>
@@ -47,30 +50,186 @@ const SONGS = [
 ];
 
 
+// ── Music Visualizer Component ─────────────────────────────────────────────
+const MusicVisualizer = ({ isLoaded, progress }) => {
+  const canvasRef = useRef(null);
+  const rafRef = useRef(null);
+  const barsRef = useRef([]);
+  const NUM_BARS = 100;
+
+  // Initialize bars with envelope shapes and particle states
+  useEffect(() => {
+    barsRef.current = Array.from({ length: NUM_BARS }, (_, i) => {
+      const nx = i / NUM_BARS; // 0 to 1
+      // Create a shape envelope: peak around 0.35, secondary bump around 0.7
+      let envelope = Math.exp(-Math.pow(nx - 0.35, 2) / 0.03);
+      envelope += 0.4 * Math.exp(-Math.pow(nx - 0.65, 2) / 0.05);
+      envelope += 0.15 * Math.exp(-Math.pow(nx - 0.85, 2) / 0.02);
+      // Taper the extreme edges
+      envelope *= Math.sin(nx * Math.PI);
+
+      return {
+        envelope: envelope * 0.8 + 0.02, // base amplitude
+        phase: Math.random() * Math.PI * 2,
+        speed: 1 + Math.random() * 1.5,
+        particleY: 0,
+        particleLife: Math.random(),
+        hasParticle: Math.random() > 0.75
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    const draw = (timestamp) => {
+      const W = canvas.width;
+      const H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      const barW = Math.max(1.5, (W / NUM_BARS) * 0.5);
+      const gap = W / NUM_BARS;
+      const centerY = H / 2;
+      const color = '#dca3d6'; // Pale purple from reference
+
+      const speedMult = isLoaded ? 2.5 : 0.8 + (progress / 100) * 1.2;
+      const globalAlphaBase = isLoaded ? 1.0 : 0.4 + (progress / 100) * 0.4;
+
+      // Draw central horizontal line
+      ctx.fillStyle = color;
+      ctx.globalAlpha = globalAlphaBase * 0.4;
+      ctx.fillRect(0, centerY, W, 1);
+
+      ctx.shadowColor = color;
+      ctx.shadowBlur = isLoaded ? 10 : 5;
+      ctx.fillStyle = color;
+
+      barsRef.current.forEach((bar, i) => {
+        // Oscillation for life-like movement
+        const oscillation = Math.sin(timestamp * 0.003 * bar.speed * speedMult + bar.phase);
+        const amplitude = 0.3 + (oscillation + 1) * 0.35; // [0.3, 1.0]
+
+        let barH = bar.envelope * amplitude * H * 0.8;
+        if (barH < 2) barH = 2; // minimum height
+
+        const x = i * gap + (gap - barW) / 2;
+
+        // Draw bar
+        ctx.globalAlpha = globalAlphaBase;
+        ctx.fillRect(x, centerY - barH / 2, barW, barH);
+
+        // Draw particles
+        if (bar.hasParticle) {
+          bar.particleLife -= 0.015 * speedMult;
+          if (bar.particleLife <= 0) {
+            bar.particleLife = 1.0;
+            // Spawn particle just below the bar
+            bar.particleY = barH / 2 + Math.random() * 5 + 2;
+          } else {
+            bar.particleY += 0.3 * speedMult; // drift down
+          }
+
+          ctx.globalAlpha = bar.particleLife * globalAlphaBase * 0.8;
+          ctx.fillRect(x, centerY + bar.particleY, barW, barW);
+        }
+      });
+
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1.0;
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    rafRef.current = requestAnimationFrame(draw);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [isLoaded, progress]);
+
+  return (
+    <div className="splash-visualizer">
+      <canvas ref={canvasRef} width={400} height={120} className="splash-canvas" />
+      <p className="splash-loading-text">
+        {isLoaded ? 'Ready!' : `Preparing your experience… ${progress}%`}
+      </p>
+    </div>
+  );
+};
+
 export default function App() {
   const [playingId, setPlayingId] = useState(null);
   const [activeSong, setActiveSong] = useState(SONGS[0]);
   const [targetSpeed, setTargetSpeed] = useState(0.015);
+  const [isVinylPlaying, setIsVinylPlaying] = useState(false);
+  const [entered, setEntered] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loadProgress, setLoadProgress] = useState(0);
+  const [isVisualizing, setIsVisualizing] = useState(false);
+  
+  // Form state
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState('');
 
+  // Routing state
+  const [currentView, setCurrentView] = useState('home');
+
+  // ── Cache-first Audio Preloader (Starbucks-style offline caching) ──────────
+  useEffect(() => {
+    const CACHE_NAME = 'owna-song-audio-v1';
+    const audioFiles = SONGS.map(s => s.audioSrc);
+    let completed = 0;
+
+    const cacheAndLoad = async () => {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        await Promise.all(
+          audioFiles.map(async (url) => {
+            // If already cached, skip fetching from network
+            const cached = await cache.match(url);
+            if (!cached) {
+              try {
+                const res = await fetch(url);
+                if (res.ok) await cache.put(url, res);
+              } catch (e) {
+                console.warn('Failed to cache:', url, e);
+              }
+            }
+            completed++;
+            setLoadProgress(Math.round((completed / audioFiles.length) * 100));
+          })
+        );
+      } catch (e) {
+        // Cache API not available — fallback gracefully
+        console.warn('Cache API unavailable, falling back to direct fetch', e);
+        try {
+          await fetch(SONGS[0].audioSrc);
+        } catch (_) {}
+      }
+      // Minimum splash duration of 1.5s for the visualizer to play (if they clicked early)
+      setTimeout(() => setLoaded(true), 1500);
+    };
+
+    cacheAndLoad();
+  }, []);
+
+  // When user clicks the play button
+  const handleStartExperience = () => {
+    setIsVisualizing(true);
+  };
+
+  // Auto-enter once loaded AND user has started the visualizer
+  useEffect(() => {
+    if (loaded && isVisualizing && !entered) {
+      // Small delay so user sees the visualizer finish gracefully
+      const t = setTimeout(() => handleEnter(), 600);
+      return () => clearTimeout(t);
+    }
+  }, [loaded, isVisualizing, entered]);
   
   // ── Scratch Engine ─────────────────────────────────────────────────────────
   const engineRef            = useRef(null);
   const engineCreationIdRef  = useRef(0);
   const lastDragRateRef      = useRef(1);
   const rateEasingRafRef     = useRef(null);
-
-  // Tear down engine when song changes so the next drag loads the new track
-  useEffect(() => {
-    engineCreationIdRef.current++;
-    if (rateEasingRafRef.current) {
-      cancelAnimationFrame(rateEasingRafRef.current);
-      rateEasingRafRef.current = null;
-    }
-    if (engineRef.current) {
-      engineRef.current.suspend();
-      engineRef.current = null;
-    }
-  }, [activeSong.id]);
 
   // Global cleanup on unmount
   useEffect(() => {
@@ -80,24 +239,47 @@ export default function App() {
     };
   }, []);
 
-  // Called the instant the user touches the disc — lazy-init engine
+  const loadAndPlaySong = (songToLoad) => {
+    const id = ++engineCreationIdRef.current;
+    if (rateEasingRafRef.current) {
+      cancelAnimationFrame(rateEasingRafRef.current);
+      rateEasingRafRef.current = null;
+    }
+    if (engineRef.current) {
+      engineRef.current.suspend();
+      engineRef.current = null;
+    }
+
+    createScratchEngine(songToLoad.audioSrc)
+      .then(eng => {
+        if (id !== engineCreationIdRef.current) { eng.suspend(); return; }
+        engineRef.current = eng;
+        eng.setRate(1); // Normal playback
+        
+        // Apply a smooth 1-second fade-in right as it starts
+        eng.setVolume(0, 0);
+        eng.resume();
+        eng.setVolume(1, 1.0);
+        
+        lastDragRateRef.current = 1;
+      })
+      .catch(console.error);
+  };
+
+  const handleEnter = () => {
+    setEntered(true);
+    setIsVinylPlaying(true);
+    loadAndPlaySong(activeSong);
+  };
+
+  // Called the instant the user touches the disc
   const handleDragStart = useCallback(() => {
     if (rateEasingRafRef.current) {
       cancelAnimationFrame(rateEasingRafRef.current);
       rateEasingRafRef.current = null;
     }
-    if (!engineRef.current) {
-      const id = ++engineCreationIdRef.current;
-      createScratchEngine(activeSong.audioSrc)
-        .then(eng => {
-          if (id !== engineCreationIdRef.current) { eng.suspend(); return; }
-          engineRef.current = eng;
-          eng.setRate(0);   // silent until dragging
-          eng.resume();
-        })
-        .catch(console.error);
-    }
-  }, [activeSong.audioSrc]);
+    // Engine is already created by loadAndPlaySong
+  }, []);
 
   // Called every pointermove — drives audio rate directly
   const handleDragRate = useCallback((rate) => {
@@ -121,24 +303,62 @@ export default function App() {
         rateEasingRafRef.current = requestAnimationFrame(ease);
       } else {
         rateEasingRafRef.current = null;
+        lastDragRateRef.current = 1;
       }
     };
     rateEasingRafRef.current = requestAnimationFrame(ease);
   }, []);
 
-
   const handleSongSelect = (song) => {
-    if (activeSong.id === song.id) return;
+    if (activeSong.id === song.id) {
+      if (isVinylPlaying) {
+        engineRef.current?.setVolume(0, 0.2); // quick fade out
+        setTimeout(() => {
+          if (engineRef.current && !isVinylPlaying) engineRef.current.suspend();
+        }, 200);
+        setIsVinylPlaying(false);
+        setTargetSpeed(0);
+      } else {
+        engineRef.current?.resume();
+        engineRef.current?.setVolume(1, 0.2); // quick fade in
+        setIsVinylPlaying(true);
+        setTargetSpeed(0.015);
+      }
+      return;
+    }
     
     // Smooth down vinyl speed
     setTargetSpeed(0.002);
     setActiveSong(song);
+    
+    loadAndPlaySong(song);
+    setIsVinylPlaying(true);
     
     // Ramp speed back up after a delay
     setTimeout(() => {
       setTargetSpeed(0.015);
     }, 400);
   };
+
+  // Fade out music on scroll past hero
+  useEffect(() => {
+    const handleScroll = () => {
+      const hero = document.querySelector('.hero');
+      if (hero && engineRef.current && isVinylPlaying) {
+        const rect = hero.getBoundingClientRect();
+        if (rect.bottom < window.innerHeight * 0.4) {
+           engineRef.current.setVolume(0, 1.5); // fade out over 1.5s
+           setTimeout(() => {
+              if (engineRef.current) engineRef.current.suspend();
+           }, 1500);
+           setIsVinylPlaying(false);
+           setTargetSpeed(0);
+        }
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [isVinylPlaying]);
 
   // Smooth scroll
   useEffect(() => {
@@ -185,26 +405,96 @@ export default function App() {
     setPlayingId(playingId === id ? null : id);
   };
 
+  if (currentView === 'team') {
+    return <TeamDirectory onBack={() => setCurrentView('home')} />;
+  }
+
   return (
     <>
+      <AnimatePresence>
+        {!entered && (
+          <motion.div 
+            className="splash-screen"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 1.1, filter: 'blur(10px)' }}
+            transition={{ duration: 1.2, ease: "easeInOut" }}
+          >
+            {/* Cinematic background elements just for splash */}
+            <div className="splash-glow splash-glow-1"></div>
+            <div className="splash-glow splash-glow-2"></div>
+            
+            <div className="splash-content">
+              <motion.div
+                initial={{ y: 30, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 1, delay: 0.2 }}
+              >
+                <motion.img
+                  src="/logo.svg"
+                  alt="Own A Song"
+                  className="splash-logo"
+                  animate={{ scale: [1, 1.05, 1], filter: ['drop-shadow(0px 0px 10px rgba(220,163,214,0.2))', 'drop-shadow(0px 0px 25px rgba(220,163,214,0.6))', 'drop-shadow(0px 0px 10px rgba(220,163,214,0.2))'] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                />
+              </motion.div>
+              
+              <motion.h1 
+                className="splash-title"
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 1, delay: 0.4 }}
+              >
+                Own A Song
+              </motion.h1>
+              
+              <motion.p 
+                className="splash-subtitle"
+                initial={{ y: 10, opacity: 0 }}
+                animate={{ y: 0, opacity: 0.7 }}
+                transition={{ duration: 1, delay: 0.6 }}
+              >
+                For the best experience, put on your headphones.
+              </motion.p>
+              
+              <motion.div
+                className="splash-action-container"
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 1, delay: 0.8 }}
+              >
+                {!isVisualizing ? (
+                  <button className="splash-btn-premium" onClick={handleStartExperience}>
+                    <div className="splash-btn-icon">
+                      <Play size={16} fill="currentColor" />
+                    </div>
+                    Enter Studio
+                  </button>
+                ) : (
+                  <MusicVisualizer isLoaded={loaded} progress={loadProgress} />
+                )}
+              </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="bg-blob blob-1"></div>
       <div className="bg-blob blob-2"></div>
       
       <header className="nav glass">
         <div className="wrap">
           <a href="#top" className="logo">
-            <Disc color="#C2185B" size={32} />
+            <img src="/logo.svg" alt="Own A Song" style={{ width: 60, height: 60, objectFit: 'contain', filter: 'brightness(0) invert(1) drop-shadow(0 0 10px rgba(255,255,255,0.4))' }} />
             Own A Song
           </a>
           <nav className="nav-links">
-            <a href="#occasions">Occasions</a>
+            <a href="#team">Our Team</a>
             <a href="#process">How It Works</a>
-            <a href="#testimonials">Stories</a>
+            <a href="#stories">Stories</a>
+            <a href="#pricing">Pricing</a>
             <a href="#contact">Contact</a>
           </nav>
-          <div className="nav-cta">
-            <a href="#contact" className="btn btn-primary">Start Your Song</a>
-          </div>
+
         </div>
       </header>
 
@@ -295,7 +585,7 @@ export default function App() {
                         )}
                         <div className="chip-art" style={{ background: `linear-gradient(135deg, ${song.color1}, ${song.color2})` }}>
                           {isActive && (
-                            <div className="eq-bars">
+                            <div className={`eq-bars ${!isVinylPlaying ? 'paused' : ''}`}>
                               <span className="eq-bar"></span>
                               <span className="eq-bar"></span>
                               <span className="eq-bar"></span>
@@ -319,16 +609,14 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, ease: "easeOut" }}
             >
-              <span className="eyebrow">Custom Songs, Composed By Real Musicians</span>
-              <h1>Your story,<br/>composed with love.</h1>
-              <p>We turn your memories into a one-of-a-kind song — written, performed and produced by real musicians. Not a single note of AI.</p>
+              <span className="eyebrow">The Ultimate Premium Gift</span>
+              <h1>Your story,<br/>scored like cinema.</h1>
+              <p>We forge your memories into an unparalleled musical masterpiece—meticulously crafted, performed, and produced by elite artists. No AI, just pure artistry.</p>
               <div className="hero-cta-row">
-                <a href="#contact" className="btn btn-primary">
-                  Start Your Song <ArrowRight size={18} />
-                </a>
-                <a href="#testimonials" className="btn btn-outline">
-                  <Play size={18} /> Hear a Sample
-                </a>
+                <button onClick={() => setIsFormOpen(true)} className="btn btn-primary">
+                  Commission Your Masterpiece <ArrowRight size={18} />
+                </button>
+
               </div>
             </motion.div>
           </div>
@@ -336,37 +624,52 @@ export default function App() {
 
 
         {/* TRUST STRIP */}
-        <div className="trust-strip glass">
+        <div className="trust-strip">
           <div className="wrap">
-            <motion.span initial={{opacity:0, y:10}} whileInView={{opacity:1, y:0}} viewport={{once:true}} transition={{delay:0.1}}><Check size={18} /> 100% Human-Made</motion.span>
-            <motion.span initial={{opacity:0, y:10}} whileInView={{opacity:1, y:0}} viewport={{once:true}} transition={{delay:0.2}}><Check size={18} /> 4,000+ Happy Clients</motion.span>
-            <motion.span initial={{opacity:0, y:10}} whileInView={{opacity:1, y:0}} viewport={{once:true}} transition={{delay:0.3}}><Check size={18} /> Studio Recorded</motion.span>
-            <motion.span initial={{opacity:0, y:10}} whileInView={{opacity:1, y:0}} viewport={{once:true}} transition={{delay:0.4}}><Check size={18} /> Delivered in Days</motion.span>
+            <motion.span initial={{opacity:0, y:10}} whileInView={{opacity:1, y:0}} viewport={{once:true}} transition={{delay:0.1}}><Check size={18} /> Elite Human Artistry</motion.span>
+            <motion.span initial={{opacity:0, y:10}} whileInView={{opacity:1, y:0}} viewport={{once:true}} transition={{delay:0.2}}><Check size={18} /> Trusted by 4,000+ Patrons</motion.span>
+            <motion.span initial={{opacity:0, y:10}} whileInView={{opacity:1, y:0}} viewport={{once:true}} transition={{delay:0.3}}><Check size={18} /> Studio-Grade Production</motion.span>
+            <motion.span initial={{opacity:0, y:10}} whileInView={{opacity:1, y:0}} viewport={{once:true}} transition={{delay:0.4}}><Check size={18} /> Expedited Global Delivery</motion.span>
           </div>
         </div>
 
-        {/* OCCASIONS */}
-        <section id="occasions">
+        {/* TEAM */}
+        <section id="team" className="team-section">
           <div className="wrap">
-            <Reveal className="section-head">
-              <span className="eyebrow">Choose Your Track</span>
-              <h2>What's the story you want to tell?</h2>
+            <Reveal className="section-head text-center">
+              <span className="eyebrow">The Artisans</span>
+              <h2>The Masterminds</h2>
+              <p>The award-winning vocalists, composers, and producers engineering your legacy.</p>
             </Reveal>
-            <div className="occasions-grid">
+
+            <div className="team-grid">
               {[
-                { title: "Birthday Song", desc: "A song built from their favourite memories — the one gift they'll replay every year." },
-                { title: "Anniversary Song", desc: "Every inside joke, every \"remember when\" — composed into a track that's only yours." },
-                { title: "Wedding Surprise", desc: "A first-dance or reception moment nobody saw coming — and nobody will forget." },
-                { title: "Friendship & Family", desc: "For the people who've stuck around — because \"thank you\" sometimes needs a melody." },
-                { title: "Corporate Tribute", desc: "Mark a milestone, honour a retirement, or open an event with something no slideshow can." }
-              ].map((occ, i) => (
-                <Reveal key={i} delay={i * 0.1} className="occasion-card glass">
-                  <div className="occasion-disc"></div>
-                  <h3>{occ.title}</h3>
-                  <p>{occ.desc}</p>
-                  <a href="#contact" className="link">Explore <ArrowRight size={16} /></a>
+                { name: "ENREDH", role: "Singer, Songwriter, Music Producer", image: "/team/enredh.jpg", ig: "@enredh" },
+                { name: "TAEZY", role: "Singer, Songwriter", image: "/team/taezy.jpg", ig: "@its.taezy" },
+                { name: "SAYAN", role: "Singer, Songwriter", image: "/team/sayan.jpg", ig: "@sayansebs" },
+                { name: "ADARSH", role: "Singer", image: "/team/adarsh.jpg", ig: "@adarsh_vox" }
+              ].map((member, i) => (
+                <Reveal key={i} delay={i * 0.1} className="team-card glass text-center">
+                  <div className="team-image-wrapper">
+                    <img src={member.image} alt={member.name} className="team-image" />
+                  </div>
+                  <h3>{member.name}</h3>
+                  <p className="team-role">{member.role}</p>
+                  {member.ig && (
+                    <a href={`https://instagram.com/${member.ig.replace('@','')}`} target="_blank" rel="noopener noreferrer" className="team-insta" style={{ marginTop: '12px' }}>
+                      {member.ig}
+                    </a>
+                  )}
                 </Reveal>
               ))}
+            </div>
+
+            <div style={{ marginTop: '48px', textAlign: 'center' }}>
+              <Reveal delay={0.4}>
+                <button className="btn btn-outline" onClick={() => setCurrentView('team')}>
+                  See All 22 Members <ArrowRight size={18} style={{ marginLeft: '8px' }}/>
+                </button>
+              </Reveal>
             </div>
           </div>
         </section>
@@ -375,27 +678,24 @@ export default function App() {
         <section className="process" id="process">
           <div className="wrap">
             <Reveal className="section-head">
-              <span className="eyebrow">Side A — The Process</span>
-              <h2>From your story to their song</h2>
-              <p>Six steps, no shortcuts. Every one done by a real person who cares how it turns out.</p>
+              <span className="eyebrow">The Blueprint</span>
+              <h2>From Memory to Masterpiece</h2>
+              <p>A meticulous journey where every note is tailored to perfection. No compromises.</p>
             </Reveal>
 
             <div className="tracklist">
               {[
-                { time: "Day 1", title: "Share Your Story", desc: "Message us or fill a short form with the memory, feeling or moment you want turned into a song." },
-                { time: "Day 1", title: "Consultation Call", desc: "Our team calls to understand the tone, the names, the details worth keeping." },
-                { time: "Day 2–3", title: "Lyrics & Melody Draft", desc: "Our songwriters draft custom lyrics and a rough melody, shared with you first." },
-                { time: "Day 3–4", title: "Studio Recording", desc: "Professional vocalists and musicians record and produce the final track." },
-                { time: "Day 5", title: "Review & Refine", desc: "You get a preview, we polish it based on your feedback." },
-                { time: "Day 5–7", title: "Delivered With Love", desc: "Your final song arrives — ready to play, gift, or surprise someone with." }
-              ].map((track, i) => (
+                { num: "01", title: "The Canvas", desc: "Define the occasion—whether it’s a milestone anniversary, a cinematic wedding, or an unforgettable surprise." },
+                { num: "02", title: "The Narrative", desc: "Share the inside jokes, the defining moments, and the raw emotions. Every detail fuels our creative engine." },
+                { num: "03", title: "The Aesthetic", desc: "Select your genre—from a sweeping orchestral ballad to a high-energy pop anthem—or let our directors guide you." },
+                { num: "04", title: "The Reveal", desc: "Experience the awe as your bespoke composition is unveiled, ready to echo through eternity." }
+              ].map((step, i) => (
                 <Reveal key={i} delay={i * 0.1} className="track-row">
-                  <div className="track-num">0{i+1}</div>
+                  <div className="track-num">{step.num}</div>
                   <div>
-                    <div className="track-title">{track.title}</div>
-                    <div className="track-desc">{track.desc}</div>
+                    <div className="track-title">{step.title}</div>
+                    <div className="track-desc">{step.desc}</div>
                   </div>
-                  <div className="track-time">{track.time}</div>
                 </Reveal>
               ))}
             </div>
@@ -403,11 +703,11 @@ export default function App() {
         </section>
 
         {/* TESTIMONIALS */}
-        <section id="testimonials">
+        <section id="stories">
           <div className="wrap">
             <Reveal className="section-head">
-              <span className="eyebrow">Liner Notes</span>
-              <h2>What they're playing on repeat</h2>
+              <span className="eyebrow">The Impact</span>
+              <h2>Legacies immortalized through sound</h2>
             </Reveal>
 
             <div className="testimonials-grid">
@@ -454,23 +754,71 @@ export default function App() {
           </div>
         </section>
 
-        {/* INSTAGRAM */}
-        <section className="instagram" id="instagram">
+
+
+        {/* PRICING */}
+        <section id="pricing" className="pricing">
           <div className="wrap">
-            <Reveal className="insta-head">
-              <div>
-                <span className="eyebrow">Behind the Music</span>
-                <h2>Follow the making of every song</h2>
-              </div>
-              <a href="#" className="btn btn-outline"><span style={{fontWeight:'bold'}}>IG</span> @ownasong</a>
+            <Reveal className="section-head text-center">
+              <span className="eyebrow">Pricing</span>
+              <h2 style={{ textAlign: 'center' }}>Choose Your Production Level</h2>
             </Reveal>
-            <div className="insta-grid">
-              {['Studio Session', 'Her Reaction', 'Lyric Writing', 'Wedding Surprise', 'Meet the Team', 'Vocal Take 3'].map((txt, i) => (
-                <Reveal key={i} delay={i * 0.05} className="insta-tile">
-                  <div className="insta-play"><Play size={12} fill="#fff" /></div>
-                  <span>{txt}</span>
-                </Reveal>
-              ))}
+
+            <div className="pricing-grid">
+              {/* Basic Card */}
+              <Reveal delay={0.1} className="pricing-card glass">
+                <div className="discount-badge">33.33%<br/>Off</div>
+                <h3>BASIC</h3>
+                <div className="price-row">
+                  <span className="current-price">9999/-</span>
+                  <span className="original-price">14999</span>
+                </div>
+                <div className="price-type">(Acoustic)</div>
+                
+                <div className="features-divider">
+                  <span>Features</span>
+                </div>
+                
+                <ul className="features-list">
+                  <li><Check size={18} color="#C2185B" /> <span>Customized Lyrics</span></li>
+                  <li><Check size={18} color="#C2185B" /> <span>Duration 2-3 Minutes</span></li>
+                  <li><Check size={18} color="#C2185B" /> <span>Minimal layers of acoustic instruments (Guitar & Piano)</span></li>
+                  <li><Check size={18} color="#C2185B" /> <span>High Quality Studio Mix</span></li>
+                  <li><Check size={18} color="#C2185B" /> <span>Free Artwork wall hanging</span></li>
+                </ul>
+
+                <button onClick={() => { setSelectedPlan('Basic'); setIsFormOpen(true); }} className="btn btn-select">
+                  Select
+                </button>
+              </Reveal>
+
+              {/* Advanced Card */}
+              <Reveal delay={0.2} className="pricing-card glass highlight-card">
+                <div className="best-value-ribbon">BEST VALUE</div>
+                <div className="discount-badge">33.33%<br/>Off</div>
+                <h3>Advanced</h3>
+                <div className="price-row">
+                  <span className="current-price">14999/-</span>
+                  <span className="original-price">22499</span>
+                </div>
+                <div className="price-type">(Fully Produced)</div>
+                
+                <div className="features-divider">
+                  <span>Features</span>
+                </div>
+                
+                <ul className="features-list">
+                  <li><Check size={18} color="#C2185B" /> <span>Customized Lyrics</span></li>
+                  <li><Check size={18} color="#C2185B" /> <span>Duration 2-3 Minutes</span></li>
+                  <li><Check size={18} color="#C2185B" /> <span>Multi Instruments (Like a complete song)</span></li>
+                  <li><Check size={18} color="#C2185B" /> <span>High Quality Studio Mix</span></li>
+                  <li><Check size={18} color="#C2185B" /> <span>Free Artwork wall hanging</span></li>
+                </ul>
+
+                <button onClick={() => { setSelectedPlan('Advanced'); setIsFormOpen(true); }} className="btn btn-select">
+                  Select
+                </button>
+              </Reveal>
             </div>
           </div>
         </section>
@@ -478,10 +826,10 @@ export default function App() {
         {/* FINAL CTA */}
         <section className="final-cta" id="contact">
           <Reveal className="wrap">
-            <h2>Ready to give a song only you could write?</h2>
-            <p>Tell us the story. We'll bring the music.</p>
+            <h2>Ready to create an unforgettable legacy?</h2>
+            <p>Your story. Our symphony.</p>
             <a href="https://wa.me/918374376200" target="_blank" rel="noopener noreferrer" className="btn btn-light">
-              Start Your Song on WhatsApp
+              Commission Your Track via WhatsApp
             </a>
             <div className="final-phone">or call +91 83743 76200</div>
           </Reveal>
@@ -494,16 +842,16 @@ export default function App() {
           <div className="footer-top">
             <div>
               <div className="footer-logo">
-                <Disc color="#FFF9F6" size={28} />
+                <img src="/logo.svg" alt="Own A Song" style={{ width: 28, height: 28, objectFit: 'contain', filter: 'brightness(0) invert(1) drop-shadow(0 0 8px rgba(255,255,255,0.3))' }} />
                 Own A Song
               </div>
-              <div className="footer-tagline">Your story, composed with love — one custom song at a time.</div>
+              <div className="footer-tagline">Your story, scored like cinema — one bespoke masterpiece at a time.</div>
             </div>
             <div className="footer-links">
               <div className="footer-col">
                 <h4>Explore</h4>
                 <ul>
-                  <li><a href="#occasions">Occasions</a></li>
+                  <li><a href="#team">Our Team</a></li>
                   <li><a href="#process">How It Works</a></li>
                   <li><a href="#testimonials">Stories</a></li>
                 </ul>
@@ -531,6 +879,13 @@ export default function App() {
       <a href="https://wa.me/918374376200" target="_blank" rel="noopener noreferrer" className="wa-float" aria-label="Chat with us on WhatsApp">
         <span style={{fontWeight:'bold', fontSize:'24px', color:'#fff'}}>WA</span>
       </a>
+
+      {/* Order Form Modal */}
+      <OrderForm 
+        isOpen={isFormOpen} 
+        onClose={() => setIsFormOpen(false)} 
+        initialPlan={selectedPlan} 
+      />
     </>
   );
 }

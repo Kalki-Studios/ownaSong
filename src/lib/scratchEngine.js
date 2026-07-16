@@ -17,9 +17,12 @@ export async function createScratchEngine(audioUrl) {
     channelData.push(audioBuffer.getChannelData(i));
   }
   
-  // 5. Create node & connect
+  // 5. Create nodes & connect
   const node = new AudioWorkletNode(ctx, 'scratch-processor');
-  node.connect(ctx.destination);
+  const gainNode = ctx.createGain();
+  
+  node.connect(gainNode);
+  gainNode.connect(ctx.destination);
   
   // 6. Load data into worklet
   node.port.postMessage({ type: 'load', data: { channelData } });
@@ -27,6 +30,7 @@ export async function createScratchEngine(audioUrl) {
   return {
     ctx,
     node,
+    gainNode,
     sampleRate: ctx.sampleRate,
     totalSamples: audioBuffer.length,
     setRate: (rate) => {
@@ -34,6 +38,11 @@ export async function createScratchEngine(audioUrl) {
     },
     setPlayhead: (position) => {
       node.port.postMessage({ type: 'setPlayhead', data: { position } });
+    },
+    setVolume: (value, time = 0.5) => {
+      gainNode.gain.cancelScheduledValues(ctx.currentTime);
+      gainNode.gain.setValueAtTime(gainNode.gain.value, ctx.currentTime);
+      gainNode.gain.linearRampToValueAtTime(value, ctx.currentTime + time);
     },
     onPosition: (callback) => {
       node.port.onmessage = (event) => {
