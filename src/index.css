@@ -1140,7 +1140,8 @@ html, body {
   justify-content: center;
   gap: 60px;
   flex-wrap: wrap;
-  margin-top: 60px;
+  margin-top: 40px;
+  padding-top: 24px; /* Space for badge to overflow */
 }
 
 .pricing-card {
@@ -1323,7 +1324,7 @@ html, body {
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
     -ms-overflow-style: none;
-    padding-bottom: 32px;
+    padding: 32px 24px; /* Top padding for badge, side padding for scroll bounds */
     gap: 24px;
   }
   .pricing-grid::-webkit-scrollbar {
