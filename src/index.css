@@ -508,8 +508,21 @@ section { padding: 96px 0; }
 }
 
 /* ---------- Testimonials ---------- */
-.testimonials-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; }
+.testimonials-grid { 
+  display: flex; 
+  gap: 24px; 
+  overflow-x: auto; 
+  scroll-snap-type: x mandatory; 
+  scrollbar-width: none; 
+  -ms-overflow-style: none;
+  padding-bottom: 24px;
+}
+.testimonials-grid::-webkit-scrollbar {
+  display: none;
+}
 .quote-card {
+  flex: 0 0 calc(33.333% - 16px);
+  scroll-snap-align: start;
   border-radius: 20px;
   padding: 32px;
   position: relative;
@@ -553,8 +566,8 @@ section { padding: 96px 0; }
 .waveform.playing .bar { animation-play-state: running; }
 @keyframes waveform { 0%,100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
 
-@media (max-width: 900px) { .testimonials-grid { grid-template-columns: repeat(2,1fr); } }
-@media (max-width: 620px) { .testimonials-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .quote-card { flex: 0 0 calc(50% - 12px); } }
+@media (max-width: 620px) { .quote-card { flex: 0 0 90%; } }
 
 /* ---------- Instagram ---------- */
 .instagram { background: var(--blush); position: relative; z-index: 1; }
@@ -1156,21 +1169,21 @@ html, body {
   box-shadow: 0 24px 60px rgba(194,24,91,0.2);
 }
 
-.best-value-ribbon {
+/* .best-value-ribbon {
   position: absolute;
   top: 24px;
   left: -44px;
-  background: linear-gradient(135deg, #F8B500, #F37335);
-  color: white;
+  background: linear-gradient(135deg, #E5C39C, var(--gold));
+  color: var(--plum-deep);
   padding: 8px 48px;
   font-weight: 800;
   font-size: 0.8rem;
   text-transform: uppercase;
   transform: rotate(-45deg);
-  box-shadow: 0 8px 16px rgba(243,115,53,0.3);
+  box-shadow: 0 8px 16px rgba(212, 163, 115, 0.3);
   letter-spacing: 0.1em;
   z-index: 10;
-}
+} */
 
 .discount-badge {
   position: absolute;
@@ -1301,7 +1314,26 @@ html, body {
 }
 
 @media (max-width: 900px) {
-  .pricing-grid { flex-direction: column; align-items: center; }
+  .pricing-grid {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-items: stretch;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding-bottom: 32px;
+    gap: 24px;
+  }
+  .pricing-grid::-webkit-scrollbar {
+    display: none;
+  }
+  .pricing-card {
+    flex: 0 0 90%;
+    scroll-snap-align: start;
+    max-width: none;
+  }
   .pricing-card.highlight-card { transform: none; }
 }
 

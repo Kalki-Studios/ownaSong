@@ -714,16 +714,6 @@ export default function App() {
                     <div className="quote-avatar"></div>
                     <div><div className="quote-name">Ritu S.</div><div className="quote-tag" style={{color: "#F7D9E3"}}>Birthday Song</div></div>
                   </div>
-                  <div className="np-player">
-                    <button className="np-play" onClick={() => handlePlay(1)} aria-label="Play sample">
-                      {playingId === 1 ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-                    </button>
-                    <div className={`waveform ${playingId === 1 ? 'playing' : ''}`}>
-                      {[10,20,14,24,12,22,16].map((h, i) => (
-                        <span key={i} className="bar" style={{ height: h + 'px', animationDelay: (i*0.1) + 's' }}></span>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               </Reveal>
 
@@ -787,7 +777,7 @@ export default function App() {
 
               {/* Advanced Card */}
               <Reveal delay={0.2} className="pricing-card glass highlight-card">
-                <div className="best-value-ribbon">BEST VALUE</div>
+                {/* <div className="best-value-ribbon">BEST VALUE</div> */}
                 <div className="discount-badge">33.33%<br/>Off</div>
                 <h3>Advanced</h3>
                 <div className="price-row">
